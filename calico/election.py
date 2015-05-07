@@ -38,13 +38,11 @@ class Elector(object):
     Class that manages elections.
     """
     def __init__(self, server_id, election_key,
-                 etcd_host="localhost", etcd_port=4001,
-                 interval=30, ttl=60):
+                 etcd_client, interval=30, ttl=60):
 
         self._server_id = server_id
         self._key = election_key
-        self._etcd_host = etcd_host
-        self._etcd_port = int(etcd_port)
+        self._etcd_client = etcd_client
         self._interval = int(interval)
         self._ttl = int(ttl)
 
@@ -64,10 +62,9 @@ class Elector(object):
             # the client.
             eventlet.sleep(interval)
             interval = self._interval
-            client = etcd.Client(host=self._etcd_host, port=self._etcd_port)
 
             try:
-                response = client.read(self._key)
+                response = self._etcd_client.read(self._key)
                 index = response.etcd_index
             except EtcdKeyNotFound:
                 _log.debug("Try to become the master - no entry"),
@@ -87,7 +84,7 @@ class Elector(object):
                 # We know another instance is the master. Wait until something
                 # changes, giving long enough that it really should do.
                 try:
-                    response = client.read(self._key,
+                    response = self._etcd_client.read(self._key,
                                            wait=True,
                                            waitIndex=index + 1,
                                            timeout=Timeout(connect=self._interval,
@@ -106,22 +103,21 @@ class Elector(object):
 
                 if response.action == "delete":
                     # Deleted - try and become the master. If we fail, reconnect.
-                    self._become_master(client)
+                    self._become_master()
                     break
 
 
-    def _become_master(self, client):
+    def _become_master(self):
         """
         Function to become the master. Returns if it fails, but if it succeeds
         never returns, and continually loops updating the key as necessary.
-        param: etcd.Client: etcd client to use
         raises: Nothing; terminates on error.
         """
         id_string = "%s:%d:%s" % (self._server_id, os.getpid(), int(time.time()))
 
         try:
-            client.write(self._key, id_string,
-                         ttl=self._ttl, prevExists=False)
+            self._etcd_client.write(self._key, id_string,
+                                    ttl=self._ttl, prevExists=False)
         except:
             # Got an error, so give up right away.
             _log.warning("Failed to become elected master - key %s",
@@ -136,8 +132,8 @@ class Elector(object):
         while True:
             try:
                 eventlet.sleep(self._interval)
-                client.write(self._key, id_string, ttl=self._ttl,
-                             prevValue=id_string)
+                self._etcd_client.write(self._key, id_string, ttl=self._ttl,
+                                        prevValue=id_string)
             except:
                 # If we get an exception, just terminate
                 _log.exception("Exception raised in election - terminating")
