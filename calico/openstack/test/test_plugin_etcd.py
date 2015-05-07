@@ -28,6 +28,8 @@ import calico.openstack.test.lib as lib
 import calico.openstack.mech_calico as mech_calico
 import calico.openstack.t_etcd as t_etcd
 
+t_etcd.cfg.CONF.calico.resync_interval = 30
+
 
 class EtcdKeyNotFound(BaseException):
     pass
@@ -216,7 +218,7 @@ class TestPluginEtcd(lib.Lib, unittest.TestCase):
         # Allow it to run again, this time auditing against the etcd data that
         # was written on the first iteration.
         print "\nResync with existing etcd data\n"
-        self.simulated_time_advance(t_etcd.PERIODIC_RESYNC_INTERVAL_SECS)
+        self.simulated_time_advance(t_etcd.cfg.CONF.calico.resync_interval)
         self.assertEtcdWrites({})
         self.assertEtcdDeletes(set())
 
@@ -230,7 +232,7 @@ class TestPluginEtcd(lib.Lib, unittest.TestCase):
 
         # Do another resync - expect no changes to the etcd data.
         print "\nResync with existing etcd data\n"
-        self.simulated_time_advance(t_etcd.PERIODIC_RESYNC_INTERVAL_SECS)
+        self.simulated_time_advance(t_etcd.cfg.CONF.calico.resync_interval)
         self.assertEtcdWrites({})
         self.assertEtcdDeletes(set())
 
@@ -289,7 +291,7 @@ class TestPluginEtcd(lib.Lib, unittest.TestCase):
         # missed a further update that moved port1 back to felix-host-1; this
         # resync will now discover that.
         print "\nResync with existing etcd data\n"
-        self.simulated_time_advance(t_etcd.PERIODIC_RESYNC_INTERVAL_SECS)
+        self.simulated_time_advance(t_etcd.cfg.CONF.calico.resync_interval)
         expected_writes = {
             '/calico/v1/host/felix-host-1/workload/openstack/instance-1/endpoint/DEADBEEF-1234-5678':
                 {"name": "tapDEADBEEF-12",
@@ -419,7 +421,7 @@ class TestPluginEtcd(lib.Lib, unittest.TestCase):
 
         # Resync with all latest data - expect no etcd writes or deletes.
         print "\nResync with existing etcd data\n"
-        self.simulated_time_advance(t_etcd.PERIODIC_RESYNC_INTERVAL_SECS)
+        self.simulated_time_advance(t_etcd.cfg.CONF.calico.resync_interval)
         self.assertEtcdWrites({})
         self.assertEtcdDeletes(set([]))
 
@@ -456,7 +458,7 @@ class TestPluginEtcd(lib.Lib, unittest.TestCase):
         self.osdb_ports = [context._port]
         self.db.get_security_groups.return_value[1]['security_group_rules'][0]['port_range_max'] = 5060
         print "\nResync with existing etcd data\n"
-        self.simulated_time_advance(t_etcd.PERIODIC_RESYNC_INTERVAL_SECS)
+        self.simulated_time_advance(t_etcd.cfg.CONF.calico.resync_interval)
         self.assertEtcdWrites({})
         self.assertEtcdDeletes(set([
             '/calico/v1/host/felix-host-1/workload/openstack/instance-1/endpoint/DEADBEEF-1234-5678',

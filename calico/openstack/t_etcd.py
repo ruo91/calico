@@ -41,6 +41,8 @@ calico_opts = [
                help="The hostname or IP of the etcd node/proxy"),
     cfg.IntOpt('etcd_port', default=4001,
                help="The port to use for the etcd node/proxy"),
+    cfg.IntOpt('resync_interval', default=30,
+               help="Time (s) between resyncs of the etcd DB against the Neutron DB"),
 ]
 cfg.CONF.register_opts(calico_opts, 'calico')
 
@@ -50,8 +52,6 @@ OPENSTACK_ENDPOINT_RE = re.compile(
     r'/(?P<hostname>[^/]+)/.*openstack.*/endpoint/(?P<endpoint_id>[^/]+)')
 
 json_decoder = json.JSONDecoder()
-
-PERIODIC_RESYNC_INTERVAL_SECS = 30
 
 
 class CalicoTransportEtcd(CalicoTransport):
@@ -127,8 +127,8 @@ class CalicoTransportEtcd(CalicoTransport):
             # Sleep until time for next resync.
             LOG.info("Calico plugin finished periodic resync.  "
                      "Next resync in %s seconds.",
-                     PERIODIC_RESYNC_INTERVAL_SECS)
-            eventlet.sleep(PERIODIC_RESYNC_INTERVAL_SECS)
+                     cfg.CONF.calico.resync_interval)
+            eventlet.sleep(cfg.CONF.calico.resync_interval)
 
     def _mark_profile_needed(self, profile_id):
         with self.profile_semaphore:
