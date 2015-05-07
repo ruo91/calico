@@ -29,6 +29,7 @@ import calico.openstack.mech_calico as mech_calico
 import calico.openstack.t_etcd as t_etcd
 
 t_etcd.cfg.CONF.calico.resync_interval = 30
+t_etcd.cfg.CONF.calico.resync_wait = 5
 
 
 class EtcdKeyNotFound(BaseException):
@@ -155,7 +156,7 @@ class TestPluginEtcd(lib.Lib, unittest.TestCase):
 
         # Allow the etcd transport's resync thread to run.
         self.give_way()
-        self.simulated_time_advance(1)
+        self.simulated_time_advance(t_etcd.cfg.CONF.calico.resync_wait + 1)
         self.assertEtcdWrites({'/calico/v1/config/InterfacePrefix': 'tap',
                                '/calico/v1/Ready': True})
 
@@ -177,7 +178,7 @@ class TestPluginEtcd(lib.Lib, unittest.TestCase):
 
         # Allow the etcd transport's resync thread to run.
         self.give_way()
-        self.simulated_time_advance(1)
+        self.simulated_time_advance(t_etcd.cfg.CONF.calico.resync_wait + 1)
         expected_writes = {
             '/calico/v1/config/InterfacePrefix': 'tap',
             '/calico/v1/Ready': True,

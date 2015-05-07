@@ -43,6 +43,8 @@ calico_opts = [
                help="The port to use for the etcd node/proxy"),
     cfg.IntOpt('resync_interval', default=30,
                help="Time (s) between resyncs of the etcd DB against the Neutron DB"),
+    cfg.IntOpt('resync_wait', default=5,
+               help="Time (s) to wait before first Neutron-etcd DB resync"),
 ]
 cfg.CONF.register_opts(calico_opts, 'calico')
 
@@ -64,7 +66,7 @@ class CalicoTransportEtcd(CalicoTransport):
         global LOG
         LOG = logger
 
-    def initialize(self):
+    def init_state(self):
         # Prepare client for accessing etcd data.
         self.client = etcd.Client(host=cfg.CONF.calico.etcd_host,
                                   port=cfg.CONF.calico.etcd_port)
@@ -97,11 +99,22 @@ class CalicoTransportEtcd(CalicoTransport):
         self.start_of_day_lock = eventlet.event.Event()
         self._start_of_day_complete = False
 
+    def initialize(self):
         # Spawn a green thread for periodically resynchronizing etcd against
         # the OpenStack database.
         eventlet.spawn(self.periodic_resync_thread)
 
     def periodic_resync_thread(self):
+        # Wait before first resync, to allow time for any Neutron
+        # server forking.
+        eventlet.sleep(cfg.CONF.calico.resync_wait)
+
+        # Initialize the global state that we need, including the etcd
+        # client object.  We want each driver instance to have its own
+        # copy, hence do this after the above wait.
+        self.init_state()
+
+        # Begin resync loop.
         while True:
             LOG.info("Calico plugin doing periodic resync.")
             try:
