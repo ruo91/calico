@@ -23,8 +23,7 @@ Calico election code.
 """
 import etcd
 from etcd import EtcdKeyNotFound
-import gevent
-import gevent.lock
+import eventlet
 import logging
 import time
 from urllib3 import Timeout
@@ -53,9 +52,8 @@ class Elector(object):
         assert(self._ttl > self._interval)
 
         self._master = False
-        self._mutex = gevent.lock.Semaphore()
 
-        gevent.spawn(self._run)
+        eventlet.spawn(self._run)
 
     def _run(self):
 
@@ -64,7 +62,7 @@ class Elector(object):
         while True:
             # Sleep if this is not the first time round the loop, then recreate
             # the client.
-            gevent.sleep(interval)
+            eventlet.sleep(interval)
             interval = self._interval
             client = etcd.Client(host=self._etcd_host, port=self._etcd_port)
 
@@ -133,13 +131,11 @@ class Elector(object):
         _log.warning("Successfully become master - key %s, value %s",
                      self._key, id_string)
 
-        self._mutex.acquire()
         self._master = True
-        self._mutex.release()
 
         while True:
             try:
-                gevent.sleep(self._interval)
+                eventlet.sleep(self._interval)
                 client.write(self._key, id_string, ttl=self._ttl,
                              prevValue=id_string)
             except:
@@ -152,7 +148,4 @@ class Elector(object):
         Am I the master?
         returns: True if this is the master.
         """
-        self._mutex.acquire()
-        master = self._master
-        self._mutex.release()
-        return master
+        return self._master
