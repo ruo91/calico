@@ -22,7 +22,6 @@ calico.election
 Calico election code.
 """
 import etcd
-from etcd import EtcdKeyNotFound
 import eventlet
 import logging
 import time
@@ -40,6 +39,7 @@ class Elector(object):
     def __init__(self, server_id, election_key,
                  etcd_client, interval=30, ttl=60):
 
+        _log.debug("Elector::__init__")
         self._server_id = server_id
         self._key = election_key
         self._etcd_client = etcd_client
@@ -55,6 +55,7 @@ class Elector(object):
 
     def _run(self):
 
+        _log.debug("Elector::_run")
         interval = 0
 
         while True:
@@ -66,10 +67,10 @@ class Elector(object):
             try:
                 response = self._etcd_client.read(self._key)
                 index = response.etcd_index
-            except EtcdKeyNotFound:
-                _log.debug("Try to become the master - no entry"),
+            except etcd.EtcdKeyNotFound:
+                _log.debug("Try to become the master - no entry")
 
-                self._become_master(client)
+                self._become_master()
                 # If _become_master returns, we failed and should continue.
                 continue
             except:
@@ -137,7 +138,6 @@ class Elector(object):
             except:
                 # If we get an exception, just terminate
                 _log.exception("Exception raised in election - terminating")
-                os._exit(1)
 
     def master(self):
         """

@@ -49,7 +49,7 @@ class TestPluginEtcd(lib.Lib, unittest.TestCase):
                 print "etcd reset"
                 self.assert_etcd_writes_deletes = False
 
-    def check_etcd_write(self, key, value):
+    def check_etcd_write(self, key, value, **kwargs):
         """Print each etcd write as it occurs, and save into the accumulated etcd
         database.
         """
@@ -101,6 +101,7 @@ class TestPluginEtcd(lib.Lib, unittest.TestCase):
         else:
             read_result.value = None
             if not recursive:
+                print "etcd read: %s\nNot Found" % (key)
                 raise lib.m_etcd.EtcdKeyNotFound()
 
         # Print and return the result object.

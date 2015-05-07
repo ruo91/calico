@@ -24,6 +24,7 @@ import eventlet.event
 from eventlet.semaphore import Semaphore
 import json
 import re
+import socket
 
 # OpenStack imports.
 from oslo.config import cfg
@@ -34,6 +35,7 @@ from calico.datamodel_v1 import (READY_KEY, CONFIG_DIR, TAGS_KEY_RE, HOST_DIR,
                                  key_for_profile, key_for_profile_rules,
                                  key_for_profile_tags, key_for_config)
 from calico.openstack.transport import CalicoTransport
+from calico.election import Elector
 
 # Register Calico-specific options.
 calico_opts = [
@@ -99,6 +101,12 @@ class CalicoTransportEtcd(CalicoTransport):
         self.start_of_day_lock = eventlet.event.Event()
         self._start_of_day_complete = False
 
+        # Create elector object, to choose leader among multiple plugin instances.
+        self.elector = Elector(socket.gethostname(),
+                               "/calico/openstack/leader",
+                               self.client)
+        eventlet.sleep(1)
+
     def initialize(self):
         # Spawn a green thread for periodically resynchronizing etcd against
         # the OpenStack database.
@@ -118,22 +126,27 @@ class CalicoTransportEtcd(CalicoTransport):
         while True:
             LOG.info("Calico plugin doing periodic resync.")
             try:
-                # Write non-default config that Felices need.
-                self.provide_felix_config()
+                if self.elector.master():
+                    LOG.info("Current leader")
 
-                # Resynchronize endpoint data.
-                self.resync_endpoints()
+                    # Write non-default config that Felices need.
+                    self.provide_felix_config()
 
-                # Resynchronize security group data.
-                self.resync_security_groups()
+                    # Resynchronize endpoint data.
+                    self.resync_endpoints()
 
-                # If this is our first pass through start of day processing, we
-                # can now unblock anyone waiting.
-                if not self._start_of_day_complete:
-                    self.start_of_day_lock.send('complete')
-                    self._start_of_day_complete = True
-                    LOG.info("Start of day processing complete")
+                    # Resynchronize security group data.
+                    self.resync_security_groups()
 
+                    # If this is our first pass through start of day processing, we
+                    # can now unblock anyone waiting.
+                    if not self._start_of_day_complete:
+                        self.start_of_day_lock.send('complete')
+                        self._start_of_day_complete = True
+                        LOG.info("Start of day processing complete")
+                else:
+                    LOG.info("Not leader, reloading security groups")
+                    self._reload_sgs_from_neutron()
             except:
                 LOG.exception("Exception in periodic resync thread")
 
@@ -274,13 +287,17 @@ class CalicoTransportEtcd(CalicoTransport):
     def port_profile_id(self, port):
         return '_'.join(port['security_groups'])
 
-    def resync_security_groups(self):
+    def _reload_sgs_from_neutron(self):
         # Get all current security groups from the OpenStack database and key
         # them on security group ID.
         with self._sgs_semaphore:
             self.sgs.clear()
             for sg in self.driver.get_security_groups():
                 self.sgs[sg['id']] = sg
+
+    def resync_security_groups(self):
+        # Reload SG info from the OpenStack database.
+        self._reload_sgs_from_neutron()
 
         # As we look at the etcd data, accumulate a set of profile IDs that
         # already have correct data.

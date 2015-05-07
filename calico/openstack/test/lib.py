@@ -86,6 +86,7 @@ m_neutron.plugins.ml2.drivers.mech_agent.SimpleAgentMechanismDriverBase = \
     DriverBase
 
 import calico.openstack.mech_calico as mech_calico
+import calico.election as election
 
 REAL_EVENTLET_SLEEP_TIME = 0.01
 
@@ -237,7 +238,7 @@ class Lib(object):
         def log_debug(msg, *args):
             print "       DEBUG %s" % (msg % args)
             return None
-        def log_warn(msg, *args):
+        def log_warn(msg, *args, **kwargs):
             print "       WARN %s" % (msg % args)
             return None
         def log_error(msg, *args):
@@ -254,8 +255,10 @@ class Lib(object):
         mech_calico.LOG.info.side_effect = log_info
         mech_calico.LOG.debug.side_effect = log_debug
         mech_calico.LOG.warn.side_effect = log_warn
+        mech_calico.LOG.warning.side_effect = log_warn
         mech_calico.LOG.error.side_effect = log_error
         mech_calico.LOG.exception.side_effect = log_exception
+        election._log = mech_calico.LOG
 
     # Tear down after each test case.
     def tearDown(self):
