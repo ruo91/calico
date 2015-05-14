@@ -328,21 +328,6 @@ class EtcdWatcher(Actor):
 
                 _log.debug("Response action: %s, key: %s",
                            response.action, response.key)
-                if (response.action not in ("set", "create") and
-                        any((response.key.startswith(pfx) for pfx in
-                             PREFIXES_TO_RESYNC_ON_CHANGE))):
-                    # Catch deletions of whole directories or other operations
-                    # that we're not expecting.
-                    _log.warning("Unexpected event: %s; triggering resync.",
-                                 response)
-                if response.key.startswith(CONFIG_DIR):
-                    _log.warning("Global config changed but we don't "
-                                 "yet support dynamic config: %s",
-                                 response)
-                if response.key.startswith(self.my_config_dir):
-                    _log.warning("Config for this felix changed but we don't "
-                                 "yet support dynamic config: %s",
-                                 response)
 
     def _process_delete(self, response):
         """
