@@ -30,6 +30,7 @@ import logging.handlers
 import netaddr
 import netaddr.core
 import os
+import re
 import sys
 from types import StringTypes
 
@@ -58,6 +59,11 @@ KNOWN_RULE_KEYS = set([
     "icmp_code",
     "ip_version",
 ])
+
+# Regex that matches only names with valid characters in them. The list of
+# valid characters is the same for endpoints, profiles, and tags.
+VALID_ID_RE = re.compile('^[a-zA-Z0-9_\.\-]+$')
+
 
 tid_storage = gevent.local.local()
 tid_counter = itertools.count()
@@ -241,13 +247,14 @@ class ValidationFailed(Exception):
     pass
 
 
-def validate_endpoint(config, endpoint):
+def validate_endpoint(config, endpoint_id, endpoint):
     """
     Ensures that the supplied endpoint is valid. Once this routine has returned
     successfully, we know that all required fields are present and have valid
     values.
 
     :param config: configuration structure
+    :param endpoint_id: endpoint id string
     :param endpoint: endpoint dictionary as read from etcd
     :raises ValidationFailed
     """
@@ -255,6 +262,9 @@ def validate_endpoint(config, endpoint):
 
     if not isinstance(endpoint, dict):
         raise ValidationFailed("Expected endpoint to be a dict.")
+
+    if not VALID_ID_RE.match(endpoint_id):
+        issues.append("Invalid endpoint ID '%r'." % endpoint_id)
 
     if "state" not in endpoint:
         issues.append("Missing 'state' field.")
@@ -281,7 +291,10 @@ def validate_endpoint(config, endpoint):
                 issues.append("Expected profile IDs to be strings.")
                 break
 
-    if "name" in endpoint:
+            if not VALID_ID_RE.match(value):
+                issues.append("Invalid profile ID '%r'." % value)
+
+    if "name" in endpoint and isinstance(endpoint['name'], StringTypes):
         if not endpoint["name"].startswith(config.IFACE_PREFIX):
             issues.append("Interface %r does not start with %r." %
                           (endpoint["name"], config.IFACE_PREFIX))
@@ -310,12 +323,13 @@ def validate_endpoint(config, endpoint):
     if issues:
         raise ValidationFailed(" ".join(issues))
 
-def validate_rules(rules):
+def validate_rules(profile_id, rules):
     """
     Ensures that the supplied rules are valid. Once this routine has returned
     successfully, we know that all required fields are present and have valid
     values.
 
+    :param profile_id: Profile ID from etcd
     :param rules: rules list as read from etcd
     :raises ValidationFailed
     """
@@ -324,13 +338,16 @@ def validate_rules(rules):
     if not isinstance(rules, dict):
         raise ValidationFailed("Expected rules to be a dict.")
 
+    if not VALID_ID_RE.match(profile_id):
+        issues.append("Invalid profile_id '%r'." % profile_id)
+
     for dirn in ("inbound_rules", "outbound_rules"):
         if dirn not in rules:
             issues.append("No %s in rules." % dirn)
             continue
 
         if not isinstance(rules[dirn], list):
-            issues.append("Expected rules[%s] to be a dict." % dirn)
+            issues.append("Expected rules[%s] to be a list." % dirn)
             continue
 
         for rule in rules[dirn]:
@@ -353,7 +370,12 @@ def validate_rules(rules):
             if ip_version == 6 and protocol == "icmp":
                 issues.append("Using icmp with IPv6 in rule %s." % rule)
 
-            # TODO: Validate that src_tag and dst_tag contain only valid characters.
+            for tag_type in ('src_tag', 'dst_tag'):
+                tag = rule.get(tag_type)
+                if tag is None:
+                    continue
+                if not VALID_ID_RE.match(tag):
+                    issues.append("Invalid %s '%r'." % (tag_type, tag))
 
             for key in ("src_net", "dst_net"):
                 network = rule.get(key)
@@ -384,11 +406,18 @@ def validate_rules(rules):
 
             icmp_type = rule.get('icmp_type')
             if icmp_type is not None:
-                if not 0 <= icmp_type <= 255:
-                    issues.append("ICMP type is out of range.")
+                if not isinstance(icmp_type, int):
+                    issues.append("ICMP type is not an integer in rule %s." %
+                                  rule)
+                elif not 0 <= icmp_type <= 255:
+                    issues.append("ICMP type is out of range in rule %s." %
+                                  rule)
             icmp_code = rule.get("icmp_code")
             if icmp_code is not None:
-                if not 0 <= icmp_code <= 255:
+                if not isinstance(icmp_code, int):
+                    issues.append("ICMP code is not an integer in rule %s." %
+                                  rule)
+                elif not 0 <= icmp_code <= 255:
                     issues.append("ICMP code is out of range.")
                 if icmp_type is None:
                     # TODO: ICMP code without ICMP type not supported by iptables
@@ -437,16 +466,20 @@ def validate_rule_port(port):
     return None
 
 
-def validate_tags(tags):
+def validate_tags(profile_id, tags):
     """
     Ensures that the supplied tags are valid. Once this routine has returned
     successfully, we know that all required fields are present and have valid
     values.
 
+    :param profile_id: profile_id as read from etcd
     :param tags: tag set as read from etcd
     :raises ValidationFailed
     """
     issues = []
+
+    if not VALID_ID_RE.match(profile_id):
+        issues.append("Invalid profile_id '%r'." % profile_id)
 
     if not isinstance(tags, list):
         issues.append("Expected tags to be a list.")
@@ -455,6 +488,9 @@ def validate_tags(tags):
             if not isinstance(tag, StringTypes):
                 issues.append("Expected tag '%s' to be a string." % tag)
                 break
+
+            if not VALID_ID_RE.match(tag):
+                issues.append("Invalid tag '%r'." % tag)
 
     if issues:
         raise ValidationFailed(" ".join(issues))
